@@ -1,0 +1,23 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@100..900&family=Prata&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+*{
+		font-family: Outfit;
+}
+
+.active{
+	background-color: #ffebf5;
+	border-color: #C586A5;
+}
+select,input, textarea{
+		border: 1px solid #c2c2c2;
+		outline-color: #C586A5;
+		border-radius: 4px;
+}
+
+/* Enhanced focus ring for better UX */
+input:focus, select:focus, textarea:focus{
+		box-shadow: 0 0 0 6px rgba(15, 23, 42, 0.08);
+}
