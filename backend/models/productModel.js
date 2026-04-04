@@ -1,5 +1,21 @@
 import mongoose from "mongoose";
 
+export const applyReviewSummary = (product) => {
+    const reviews = Array.isArray(product.reviews) ? product.reviews : [];
+    const numReviews = reviews.length;
+    const avgRating = numReviews
+        ? Number(
+            (
+                reviews.reduce((sum, review) => sum + Number(review.rating || 0), 0) / numReviews
+            ).toFixed(1)
+        )
+        : 0;
+
+    product.numReviews = numReviews;
+    product.avgRating = avgRating;
+    return product;
+};
+
 const productSchema = new mongoose.Schema({
     name: { type: String, required: true },
     description: { type: String, required: true },
@@ -30,5 +46,10 @@ const productSchema = new mongoose.Schema({
     bestseller: { type: Boolean },
     date: { type: Number, required: true }
 })
+
+productSchema.methods.recalculateReviewSummary = function () {
+    return applyReviewSummary(this);
+};
+
 const productModel = mongoose.models.product || mongoose.model("product", productSchema);
 export default productModel

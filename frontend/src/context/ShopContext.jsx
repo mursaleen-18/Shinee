@@ -296,6 +296,7 @@ const ShopContextProvider = (props) => {
   // Context Value (so that we can access it in other components)
   const value = {
     products,
+    refreshProducts: getProductsData,
     currency,
     delivery_fee,
     search,

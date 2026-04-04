@@ -8,27 +8,66 @@ import { toast } from "react-toastify";
 
 const Product = () => {
   const { productId } = useParams();
-  const { products, currency, addToCart, token, backendUrl, navigate } = useContext(ShopContext);
+  const { currency, addToCart, token, backendUrl, navigate, profile, refreshProducts } =
+    useContext(ShopContext);
   const [productData, setProductData] = useState(false);
   const [image, setImage] = useState("");
   const [size, setSize] = useState("");
   const [review, setReview] = useState({ rating: 5, comment: "" });
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSubmittingReview, setIsSubmittingReview] = useState(false);
 
   const sellerLabel =
     productData?.sellerStoreName || productData?.sellerName || "Platform Seller";
 
-  const fetchProductData = async () => {
-    products.forEach((item) => {
-      if (item._id === productId) {
-        setProductData(item);
-        setImage(item.image[0]);
-      }
+  const renderStars = (ratingValue) => {
+    const normalizedRating = Math.round(Number(ratingValue || 0));
+    return Array.from({ length: 5 }, (_, index) => {
+      const icon = index < normalizedRating ? assets.star_icon : assets.star_dull_icon;
+      return <img key={index} src={icon} alt="" className="w-3.5" />;
     });
+  };
+
+  const fetchProductData = async () => {
+    setIsLoading(true);
+    try {
+      const res = await axios.post(backendUrl + "/api/product/single", { productId });
+      if (res.data.success && res.data.product) {
+        const nextProduct = res.data.product;
+        setProductData(nextProduct);
+        setImage((currentImage) =>
+          nextProduct.image?.includes(currentImage) ? currentImage : nextProduct.image?.[0] || ""
+        );
+      } else {
+        toast.error(res.data.message || "Product not found");
+      }
+    } catch (error) {
+      toast.error(error.message);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   useEffect(() => {
     fetchProductData();
-  }, [productId, products]);
+  }, [productId, backendUrl]);
+
+  useEffect(() => {
+    if (!productData) return;
+    const existingReview = (productData.reviews || []).find(
+      (item) => String(item.userId) === String(profile?._id || "")
+    );
+
+    if (existingReview) {
+      setReview({
+        rating: Number(existingReview.rating) || 5,
+        comment: existingReview.comment || "",
+      });
+      return;
+    }
+
+    setReview({ rating: 5, comment: "" });
+  }, [productData, profile?._id]);
 
   const submitReview = async () => {
     if (!token) {
@@ -39,6 +78,7 @@ const Product = () => {
     if (!productData?._id) return;
 
     try {
+      setIsSubmittingReview(true);
       const res = await axios.post(
         backendUrl + "/api/product/review",
         {
@@ -50,15 +90,25 @@ const Product = () => {
       );
       if (res.data.success) {
         setProductData(res.data.product);
-        setReview({ rating: 5, comment: "" });
+        await refreshProducts?.();
         toast.success("Review saved");
       } else {
         toast.error(res.data.message || "Failed to save review");
       }
     } catch (error) {
       toast.error(error.message);
+    } finally {
+      setIsSubmittingReview(false);
     }
   };
+
+  const visibleReviews = (productData?.reviews || [])
+    .slice()
+    .sort((a, b) => Number(b.date || 0) - Number(a.date || 0));
+
+  if (isLoading) {
+    return <div className="border-t-2 pt-10 text-sm text-gray-500">Loading product...</div>;
+  }
 
   return productData ? (
     <div className="border-t-2 pt-10 transition-opacity ease-in duration-500 opacity-100">
@@ -83,11 +133,7 @@ const Product = () => {
         <div className="flex-1">
           <h1 className="font-medium text-2xl mt-2">{productData.name}</h1>
           <div className="flex items-center gap-1 mt-2">
-            <img src={assets.star_icon} alt="" className="w-3 5" />
-            <img src={assets.star_icon} alt="" className="w-3 5" />
-            <img src={assets.star_icon} alt="" className="w-3 5" />
-            <img src={assets.star_icon} alt="" className="w-3 5" />
-            <img src={assets.star_dull_icon} alt="" className="w-3 5" />
+            {renderStars(productData.avgRating)}
             <p className="pl-2">({productData.numReviews || 0})</p>
           </div>
           <p className="mt-5 text-xl font-medium">
@@ -150,8 +196,10 @@ const Product = () => {
           </p>
           <p>Perfect for regular wear with a clean, modern look.</p>
           <div className="border rounded p-3 text-gray-700">
-            <p className="font-medium mb-2">Rate this product</p>
-            <div className="flex items-center gap-2 mb-2">
+            <p className="font-medium mb-2">
+              {profile ? "Rate this product" : "Login to rate this product"}
+            </p>
+            <div className="flex items-center gap-2 mb-3">
               <select
                 value={review.rating}
                 onChange={(e) => setReview({ ...review, rating: e.target.value })}
@@ -163,29 +211,41 @@ const Product = () => {
                 <option value={2}>2</option>
                 <option value={1}>1</option>
               </select>
-              <input
+              <textarea
                 value={review.comment}
                 onChange={(e) => setReview({ ...review, comment: e.target.value })}
-                placeholder="Write a short review"
+                placeholder="Write your review"
+                rows={2}
                 className="flex-1 border rounded px-2 py-1"
               />
-              <button onClick={submitReview} className="bg-black text-white px-3 py-1 rounded">
-                Submit
+              <button
+                type="button"
+                onClick={submitReview}
+                disabled={isSubmittingReview}
+                className="bg-black text-white px-3 py-1 rounded disabled:opacity-60"
+              >
+                {isSubmittingReview ? "Saving..." : "Save"}
               </button>
             </div>
-            {!!productData?.reviews?.length && (
-              <div className="space-y-1">
-                {productData.reviews
-                  .slice()
-                  .reverse()
-                  .slice(0, 5)
-                  .map((r, idx) => (
-                    <p key={idx}>
-                      <span className="font-medium">{r.userName}</span> ({r.rating}/5):{" "}
-                      {r.comment || "No comment"}
-                    </p>
-                  ))}
+            {visibleReviews.length ? (
+              <div className="space-y-3">
+                {visibleReviews.map((item) => (
+                  <div key={item.userId} className="border-t pt-3 first:border-t-0 first:pt-0">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="font-medium text-gray-900">{item.userName}</p>
+                      <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1">{renderStars(item.rating)}</div>
+                        <span className="text-xs text-gray-500">
+                          {new Date(Number(item.date || Date.now())).toLocaleDateString()}
+                        </span>
+                      </div>
+                    </div>
+                    <p className="mt-1 text-sm text-gray-600">{item.comment || "No comment"}</p>
+                  </div>
+                ))}
               </div>
+            ) : (
+              <p className="text-sm text-gray-500">No reviews yet. Be the first to review this product.</p>
             )}
           </div>
         </div>
