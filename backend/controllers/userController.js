@@ -5,6 +5,9 @@ import jwt from 'jsonwebtoken'
 import { v2 as cloudinary } from 'cloudinary'
 import instanceId from '../config/serverInstance.js'
 import crypto from 'crypto'
+import productModel from '../models/productModel.js'
+import { sendShineEmail } from '../utils/email.js'
+import { verifyToken } from '@clerk/backend'
 
 
 const createToken = (id, tokenVersion = 0) => {
@@ -22,7 +25,7 @@ const loginUser = async (req, res) => {
         const isMatch = await bcrypt.compare(password, user.password);
         if (isMatch) {
             const token = createToken(user._id, user.tokenVersion || 0)
-            res.json({ success: "true", token })
+            res.json({ success: true, token })
         }
         else (
             res.json({ success: false, message: "Invalid credentials" })
@@ -101,6 +104,56 @@ const adminLogin = async (req, res) => {
 
 export { loginUser, registerUser, adminLogin }
 
+// Exchange Clerk session token for app JWT and local user account
+export const clerkAuth = async (req, res) => {
+    try {
+        const authHeader = req.headers.authorization || "";
+        const clerkToken = authHeader.toLowerCase().startsWith("bearer ")
+            ? authHeader.slice(7).trim()
+            : "";
+        if (!clerkToken) {
+            return res.json({ success: false, message: "Missing Clerk token" });
+        }
+
+        const verified = await verifyToken(clerkToken, { secretKey: process.env.CLERK_SECRET_KEY });
+        if (!verified?.sub) {
+            return res.json({ success: false, message: "Invalid Clerk token" });
+        }
+
+        const clerkId = String(verified.sub);
+        const { email, name } = req.body;
+        if (!email) return res.json({ success: false, message: "Email is required" });
+
+        let user = await userModel.findOne({ clerkId });
+        if (!user) {
+            user = await userModel.findOne({ email });
+            if (user) {
+                user.clerkId = clerkId;
+                if (!user.name && name) user.name = name;
+                await user.save();
+            }
+        }
+
+        if (!user) {
+            const randomPassword = crypto.randomBytes(24).toString("hex");
+            const salt = await bcrypt.genSalt(10);
+            const hashedPassword = await bcrypt.hash(randomPassword, salt);
+            user = await userModel.create({
+                clerkId,
+                name: name || "User",
+                email,
+                password: hashedPassword,
+            });
+        }
+
+        const token = createToken(user._id, user.tokenVersion || 0);
+        res.json({ success: true, token, userId: user._id });
+    } catch (error) {
+        console.log(error);
+        res.json({ success: false, message: error.message });
+    }
+}
+
 // Get current user's profile
 export const getProfile = async (req, res) => {
     try {
@@ -176,7 +229,7 @@ export const logoutAll = async (req, res) => {
     }
 }
 
-// Resend verification token (simple implementation - returns token in response if email provider not configured)
+// Resend verification token
 export const resendVerification = async (req, res) => {
     try {
         const { userId } = req.body;
@@ -186,8 +239,8 @@ export const resendVerification = async (req, res) => {
         const token = crypto.randomBytes(20).toString('hex');
         user.verificationToken = token;
         await user.save();
-        // TODO: send email; for now return token so frontend can show or test
-        res.json({ success: true, message: 'Verification token generated', token });
+        // TODO: send email verification flow using provider.
+        res.json({ success: true, message: 'Verification request accepted' });
     } catch (error) {
         console.log(error);
         res.json({ success: false, message: error.message });
@@ -218,5 +271,195 @@ export const updateAvatar = async (req, res) => {
     } catch (error) {
         console.log(error);
         res.json({ success: false, message: error.message })
+    }
+}
+
+// Buyer applies to become seller (KYC submission)
+export const applySellerOnboarding = async (req, res) => {
+    try {
+        const userId = req.userId || req.body?.userId;
+        const { storeName, businessType, gstNumber, idDocumentType, idDocumentNumber } = req.body;
+        const idDocumentFile = req.files?.idDocument?.[0];
+        const addressProofFile = req.files?.addressProof?.[0];
+
+        if (!storeName || !idDocumentType || !idDocumentNumber || !idDocumentFile) {
+            return res.json({ success: false, message: "Missing required onboarding fields" });
+        }
+
+        const user = await userModel.findById(userId);
+        if (!user) return res.json({ success: false, message: "User not found" });
+
+        if (user.sellerProfile?.status === "approved") {
+            return res.json({ success: false, message: "Already an approved seller" });
+        }
+
+        const idDocumentUpload = await cloudinary.uploader.upload(idDocumentFile.path, { resource_type: "auto" });
+        let addressProofUrl = "";
+        if (addressProofFile) {
+            const addressUpload = await cloudinary.uploader.upload(addressProofFile.path, { resource_type: "auto" });
+            addressProofUrl = addressUpload.secure_url;
+        }
+
+        user.sellerProfile = {
+            ...(user.sellerProfile || {}),
+            status: "pending",
+            storeName,
+            businessType: businessType || "",
+            gstNumber: gstNumber || "",
+            idDocumentType,
+            idDocumentNumber,
+            idDocumentUrl: idDocumentUpload.secure_url,
+            addressProofUrl,
+            submittedAt: new Date(),
+            approvedAt: undefined,
+            rejectedAt: undefined,
+            rejectionReason: "",
+        };
+
+        await user.save();
+        res.json({ success: true, message: "Seller onboarding submitted for admin approval" });
+    } catch (error) {
+        console.log(error);
+        res.json({ success: false, message: error.message });
+    }
+}
+
+// Current user's seller onboarding status
+export const getSellerStatus = async (req, res) => {
+    try {
+        const { userId } = req.body;
+        const user = await userModel.findById(userId).select("role sellerProfile");
+        if (!user) return res.json({ success: false, message: "User not found" });
+        res.json({
+            success: true,
+            role: user.role,
+            sellerProfile: user.sellerProfile || { status: "none" },
+        });
+    } catch (error) {
+        console.log(error);
+        res.json({ success: false, message: error.message });
+    }
+}
+
+// Admin: list seller onboarding applications
+export const listSellerApplications = async (req, res) => {
+    try {
+        const users = await userModel
+            .find({ "sellerProfile.status": { $in: ["pending", "approved", "rejected"] } })
+            .select("name email role sellerProfile")
+            .sort({ "sellerProfile.submittedAt": -1 });
+
+        res.json({ success: true, applications: users });
+    } catch (error) {
+        console.log(error);
+        res.json({ success: false, message: error.message });
+    }
+}
+
+// Admin: approve seller onboarding
+export const approveSellerApplication = async (req, res) => {
+    try {
+        const { userId } = req.body;
+        if (!userId) return res.json({ success: false, message: "User id is required" });
+
+        const user = await userModel.findById(userId);
+        if (!user) return res.json({ success: false, message: "User not found" });
+        if (!user.sellerProfile || user.sellerProfile.status === "none") {
+            return res.json({ success: false, message: "No seller application found" });
+        }
+
+        user.role = "seller";
+        user.sellerProfile.status = "approved";
+        user.sellerProfile.approvedAt = new Date();
+        user.sellerProfile.rejectionReason = "";
+        await user.save();
+
+        await sendShineEmail({
+            to: user.email,
+            subject: "Your seller account is now active on Shine",
+            title: "Seller Onboarding Approved",
+            greeting: `Hi ${user.name},`,
+            lines: [
+                "We are pleased to let you know that your seller onboarding has been approved.",
+                "You can now access your Seller Dashboard, list products, and start receiving orders on Shine.",
+            ],
+            ctaText: "Open Seller Dashboard",
+            ctaUrl: process.env.SELLER_DASHBOARD_URL || process.env.FRONTEND_URL || "",
+        });
+
+        res.json({ success: true, message: "Seller onboarding approved" });
+    } catch (error) {
+        console.log(error);
+        res.json({ success: false, message: error.message });
+    }
+}
+
+// Admin: reject seller onboarding
+export const rejectSellerApplication = async (req, res) => {
+    try {
+        const { userId, rejectionReason } = req.body;
+        if (!userId) return res.json({ success: false, message: "User id is required" });
+
+        const user = await userModel.findById(userId);
+        if (!user) return res.json({ success: false, message: "User not found" });
+        if (!user.sellerProfile || user.sellerProfile.status === "none") {
+            return res.json({ success: false, message: "No seller application found" });
+        }
+
+        user.role = "buyer";
+        user.sellerProfile.status = "rejected";
+        user.sellerProfile.rejectedAt = new Date();
+        user.sellerProfile.rejectionReason = rejectionReason || "Application rejected by admin";
+        await user.save();
+
+        await sendShineEmail({
+            to: user.email,
+            subject: "Update required for your seller onboarding",
+            title: "Seller Onboarding Update",
+            greeting: `Hi ${user.name},`,
+            lines: [
+                "Your seller onboarding submission could not be approved at this time.",
+                `Reason provided by admin: ${user.sellerProfile.rejectionReason}`,
+                "Please update your details and submit the onboarding request again from your profile.",
+            ],
+        });
+
+        res.json({ success: true, message: "Seller onboarding rejected" });
+    } catch (error) {
+        console.log(error);
+        res.json({ success: false, message: error.message });
+    }
+}
+
+// Admin: permanently remove seller and their catalog
+export const removeSellerCompletely = async (req, res) => {
+    try {
+        const { userId } = req.body;
+        if (!userId) return res.json({ success: false, message: "User id is required" });
+
+        const seller = await userModel.findById(userId);
+        if (!seller) return res.json({ success: false, message: "Seller not found" });
+        if (seller.sellerProfile?.status === "none" && seller.role !== "seller") {
+            return res.json({ success: false, message: "User is not a seller" });
+        }
+
+        await productModel.deleteMany({ sellerId: String(userId) });
+        await userModel.findByIdAndDelete(userId);
+
+        await sendShineEmail({
+            to: seller.email,
+            subject: "Your seller account has been removed",
+            title: "Seller Account Removed",
+            greeting: `Hi ${seller.name},`,
+            lines: [
+                "Your seller account has been removed from the Shine platform by the admin team.",
+                "If you believe this was a mistake, please contact support.",
+            ],
+        });
+
+        res.json({ success: true, message: "Seller removed from platform successfully" });
+    } catch (error) {
+        console.log(error);
+        res.json({ success: false, message: error.message });
     }
 }

@@ -9,9 +9,11 @@ const addressSchema = new mongoose.Schema({
 }, { _id: false });
 
 const userSchema = new mongoose.Schema({
+  clerkId: { type: String, unique: true, sparse: true, default: "" },
   name: { type: String, required: true },
   email: { type: String, required: true, unique: true },
   password: { type: String, required: true },
+  role: { type: String, enum: ["buyer", "seller", "admin"], default: "buyer" },
   phone: { type: String, default: "" },
   // Support multiple addresses and a pointer to default address index
   addresses: { type: [addressSchema], default: [] },
@@ -28,7 +30,26 @@ const userSchema = new mongoose.Schema({
   isVerified: { type: Boolean, default: false },
   verificationToken: { type: String, default: "" },
   // Token versioning to support logout-all and token invalidation
-  tokenVersion: { type: Number, default: 0 }
+  tokenVersion: { type: Number, default: 0 },
+  // Seller onboarding data
+  sellerProfile: {
+    status: {
+      type: String,
+      enum: ["none", "pending", "approved", "rejected"],
+      default: "none",
+    },
+    storeName: { type: String, default: "" },
+    businessType: { type: String, default: "" },
+    gstNumber: { type: String, default: "" },
+    idDocumentType: { type: String, default: "" },
+    idDocumentNumber: { type: String, default: "" },
+    idDocumentUrl: { type: String, default: "" },
+    addressProofUrl: { type: String, default: "" },
+    submittedAt: { type: Date },
+    approvedAt: { type: Date },
+    rejectedAt: { type: Date },
+    rejectionReason: { type: String, default: "" },
+  },
 
 }, { minimize: false })
 

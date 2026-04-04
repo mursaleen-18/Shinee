@@ -3,6 +3,7 @@ import { createContext, useEffect, useState } from "react";
 import { toast } from "react-toastify";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
+import { useAuth, useUser } from "@clerk/clerk-react";
 
 export const ShopContext = createContext();
 
@@ -17,6 +18,9 @@ const ShopContextProvider = (props) => {
   const navigate = useNavigate();
   const [token, setToken] = useState("");
   const [profile, setProfile] = useState(null);
+  const [sellerProfile, setSellerProfile] = useState({ status: "none" });
+  const { isSignedIn, getToken: getClerkToken, signOut } = useAuth();
+  const { user } = useUser();
 
   const addToCart = async (itemId, size) => {
     if (!size) {
@@ -139,6 +143,7 @@ const ShopContextProvider = (props) => {
             setToken('')
             localStorage.removeItem('token')
             setProfile(null)
+            setSellerProfile({ status: "none" })
             toast.info('Session expired. Please login again.')
             navigate('/login')
           }
@@ -162,8 +167,50 @@ const ShopContextProvider = (props) => {
       setToken(t);
       getUserCart(t);
       fetchProfile(t);
+      fetchSellerStatus(t);
     }
   }, [])
+
+  useEffect(() => {
+    const syncClerkSession = async () => {
+      if (!isSignedIn) {
+        setToken("");
+        localStorage.removeItem("token");
+        setProfile(null);
+        setSellerProfile({ status: "none" });
+        setCartItems({});
+        return;
+      }
+
+      const existingToken = localStorage.getItem("token");
+      if (existingToken) return;
+
+      try {
+        const clerkToken = await getClerkToken();
+        if (!clerkToken || !user?.primaryEmailAddress?.emailAddress) return;
+        const res = await axios.post(
+          backendUrl + "/api/user/clerk-auth",
+          {
+            email: user.primaryEmailAddress.emailAddress,
+            name: user.fullName || user.firstName || "User",
+          },
+          { headers: { Authorization: `Bearer ${clerkToken}` } }
+        );
+        if (res.data.success && res.data.token) {
+          setToken(res.data.token);
+          localStorage.setItem("token", res.data.token);
+          getUserCart(res.data.token);
+          fetchProfile(res.data.token);
+          fetchSellerStatus(res.data.token);
+        } else {
+          toast.error(res.data.message || "Failed to authenticate with backend");
+        }
+      } catch (error) {
+        console.log("Clerk sync failed", error);
+      }
+    };
+    syncClerkSession();
+  }, [isSignedIn, user?.id, backendUrl]);
 
   // Get User Cart from Backend. (so that whenever the user logs in, we can fetch their cart)
   const getUserCart = async (token) => {
@@ -195,6 +242,25 @@ const ShopContextProvider = (props) => {
     }
   }
 
+  const fetchSellerStatus = async (tokenToUse = token) => {
+    if (!tokenToUse) {
+      setSellerProfile({ status: "none" });
+      return;
+    }
+    try {
+      const res = await axios.post(
+        backendUrl + "/api/user/seller/status",
+        {},
+        { headers: { token: tokenToUse } }
+      );
+      if (res.data.success) {
+        setSellerProfile(res.data.sellerProfile || { status: "none" });
+      }
+    } catch (error) {
+      console.log("Failed to fetch seller status", error);
+    }
+  };
+
   const logoutAll = async () => {
     if (!token) return;
     try {
@@ -205,8 +271,25 @@ const ShopContextProvider = (props) => {
       setToken('');
       localStorage.removeItem('token');
       setProfile(null);
+      setSellerProfile({ status: "none" });
       setCartItems({});
+      if (isSignedIn) await signOut();
       navigate('/login');
+    }
+  }
+
+  const logout = async () => {
+    try {
+      if (isSignedIn) await signOut();
+    } catch (error) {
+      console.log(error);
+    } finally {
+      setToken("");
+      localStorage.removeItem("token");
+      setProfile(null);
+      setSellerProfile({ status: "none" });
+      setCartItems({});
+      navigate("/login");
     }
   }
 
@@ -233,16 +316,22 @@ const ShopContextProvider = (props) => {
         localStorage.setItem('token', t);
         fetchProfile(t);
         getUserCart(t);
+        fetchSellerStatus(t);
       } else {
         localStorage.removeItem('token');
         setProfile(null);
+        setSellerProfile({ status: "none" });
       }
     },
     token,
     profile,
     setProfile,
     fetchProfile,
+    sellerProfile,
+    setSellerProfile,
+    fetchSellerStatus,
     logoutAll,
+    logout,
   };
   return (
     <ShopContext.Provider value={value}>{props.children}</ShopContext.Provider>

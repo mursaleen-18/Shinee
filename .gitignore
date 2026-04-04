@@ -7,12 +7,12 @@ frontend/dist/
 admin/dist/
 
 # Env files and secrets
-# .env
-# .env.*
-# !.env.example
-# backend/.env
-# frontend/.env
-# admin/.env
+.env
+.env.*
+!.env.example
+backend/.env
+frontend/.env
+admin/.env
 
 # Logs
 logs/
