@@ -1,5 +1,5 @@
 import { v2 as cloudinary } from 'cloudinary'
-import productModel from '../models/productModel.js';
+import productModel, { applyReviewSummary } from '../models/productModel.js';
 import userModel from '../models/userModel.js';
 
 
@@ -191,19 +191,14 @@ const addProductReview = async (req, res) => {
             userId: String(userId),
             userName: user.name || "User",
             rating: safeRating,
-            comment: comment || "",
+            comment: typeof comment === "string" ? comment.trim() : "",
             date: Date.now(),
         };
 
         if (existingIndex >= 0) product.reviews[existingIndex] = reviewPayload;
         else product.reviews.push(reviewPayload);
 
-        product.numReviews = product.reviews.length;
-        product.avgRating = product.numReviews
-            ? Number(
-                (product.reviews.reduce((sum, r) => sum + Number(r.rating || 0), 0) / product.numReviews).toFixed(1)
-            )
-            : 0;
+        applyReviewSummary(product);
 
         await product.save();
         res.json({ success: true, message: "Review saved", product });

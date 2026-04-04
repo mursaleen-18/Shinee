@@ -5,7 +5,6 @@ import jwt from 'jsonwebtoken'
 import { v2 as cloudinary } from 'cloudinary'
 import instanceId from '../config/serverInstance.js'
 import crypto from 'crypto'
-import productModel from '../models/productModel.js'
 import { sendShineEmail } from '../utils/email.js'
 import { verifyToken } from '@clerk/backend'
 
@@ -443,7 +442,6 @@ export const removeSellerCompletely = async (req, res) => {
             return res.json({ success: false, message: "User is not a seller" });
         }
 
-        await productModel.deleteMany({ sellerId: String(userId) });
         await userModel.findByIdAndDelete(userId);
 
         await sendShineEmail({

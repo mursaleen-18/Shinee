@@ -1,4 +1,6 @@
 import mongoose from "mongoose";
+import orderModel from "./orderModel.js";
+import productModel, { applyReviewSummary } from "./productModel.js";
 
 const addressSchema = new mongoose.Schema({
   line1: { type: String, default: "" },
@@ -52,6 +54,75 @@ const userSchema = new mongoose.Schema({
   },
 
 }, { minimize: false })
+
+const deleteUserRelatedData = async (userDoc) => {
+  if (!userDoc?._id) return;
+
+  const userId = String(userDoc._id);
+  const sellerProducts = await productModel.find({ sellerId: userId }).select("_id");
+  const sellerProductIds = sellerProducts.map((product) => String(product._id));
+
+  const reviewedProducts = await productModel.find({ "reviews.userId": userId });
+  for (const product of reviewedProducts) {
+    product.reviews = (product.reviews || []).filter(
+      (review) => String(review.userId) !== userId
+    );
+    applyReviewSummary(product);
+    await product.save();
+  }
+
+  await orderModel.deleteMany({ userId });
+
+  const sellerItemQuery = sellerProductIds.length
+    ? {
+        $or: [
+          { "items.sellerId": userId },
+          { "items._id": { $in: sellerProductIds } },
+        ],
+      }
+    : { "items.sellerId": userId };
+
+  const sellerOrders = await orderModel.find(sellerItemQuery);
+  for (const order of sellerOrders) {
+    const currentItems = Array.isArray(order.items) ? order.items : [];
+    const itemTotalBefore = currentItems.reduce(
+      (sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 0),
+      0
+    );
+    const remainingItems = currentItems.filter((item) => {
+      const matchesSeller = String(item?.sellerId || "") === userId;
+      const matchesProduct = sellerProductIds.includes(String(item?._id || ""));
+      return !matchesSeller && !matchesProduct;
+    });
+
+    if (!remainingItems.length) {
+      await orderModel.findByIdAndDelete(order._id);
+      continue;
+    }
+
+    const remainingItemTotal = remainingItems.reduce(
+      (sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 0),
+      0
+    );
+    const deliveryCharge = Math.max(0, Number(order.amount || 0) - itemTotalBefore);
+
+    order.items = remainingItems;
+    order.amount = remainingItemTotal + deliveryCharge;
+    await order.save();
+  }
+
+  if (sellerProductIds.length) {
+    await productModel.deleteMany({ _id: { $in: sellerProductIds } });
+  }
+};
+
+userSchema.post("findOneAndDelete", async function (doc) {
+  await deleteUserRelatedData(doc);
+});
+
+userSchema.post("deleteOne", { document: true, query: false }, async function () {
+  await deleteUserRelatedData(this);
+});
 
 const userModel = mongoose.models.user || mongoose.model("user", userSchema);
 export default userModel
