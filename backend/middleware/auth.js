@@ -34,7 +34,9 @@ const authUser = async (req, res, next) => {
     if (user.tokenVersion !== tokenVersionFromToken) return res.json({ success: false, message: 'Token expired. Please login again.' });
     // Validate server instance id - this ensures tokens are invalid after server restart
     if (token_decode.instanceId !== instanceId) return res.json({ success: false, message: 'Server restarted — please login again.' });
+    if (!req.body) req.body = {};
     req.body.userId = token_decode.id
+    req.userId = token_decode.id
     next()
     }
     catch (error) {

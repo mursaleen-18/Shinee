@@ -16,6 +16,8 @@ import { ToastContainer, toast } from 'react-toastify';
 import Verify from './pages/Verify'
 import { AnimatePresence, motion } from 'framer-motion'
 import Profile from './pages/Profile'
+import SellerDashboard from './pages/SellerDashboard'
+import StoreProfile from './pages/StoreProfile'
 
 const App = () => {
   const location = useLocation();
@@ -45,6 +47,8 @@ const App = () => {
             <Route path='/orders' element={<Orders />} />
             <Route path='/verify' element={<Verify />} />
             <Route path='/profile' element={<Profile />} />
+            <Route path='/seller' element={<SellerDashboard />} />
+            <Route path='/store/:sellerId' element={<StoreProfile />} />
           </Routes>
         </motion.div>
       </AnimatePresence>

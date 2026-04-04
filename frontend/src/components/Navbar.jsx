@@ -15,16 +15,9 @@ const Navbar = () => {
     getCartCount,
     navigate,
     token,
-    setToken,
-    setCartItems,
+    logout,
+    sellerProfile,
   } = useContext(ShopContext);
-
-  const logout = () => {
-    navigate("/login");
-    localStorage.removeItem("token");
-    setToken("");
-    setCartItems({});
-  };
 
   return (
     <div>
@@ -135,6 +128,33 @@ const Navbar = () => {
               }`}
             />
           </NavLink>
+          {token && sellerProfile?.status === "approved" && (
+            <NavLink
+              to="/seller"
+              className={({ isActive }) =>
+                `relative group flex flex-col items-center gap-1 ${
+                  isActive ? "text-black" : ""
+                }`
+              }
+            >
+              <p
+                className={`transition-colors group-hover:text-black ${
+                  location.pathname.startsWith("/seller")
+                    ? "text-black font-semibold"
+                    : ""
+                }`}
+              >
+                SELLER DASHBOARD
+              </p>
+              <hr
+                className={`border-none h-[1.5px] bg-gray-900 transition-all duration-200 ${
+                  location.pathname.startsWith("/seller")
+                    ? "w-2/4"
+                    : "w-0 group-hover:w-2/4"
+                }`}
+              />
+            </NavLink>
+          )}
         </ul>
         <div className="flex items-center gap-6">
           {location.pathname.startsWith("/collection") && (
@@ -210,6 +230,14 @@ const Navbar = () => {
                       >
                         Orders
                       </p>
+                      {sellerProfile?.status === "approved" && (
+                        <p
+                          onClick={() => navigate("/seller")}
+                          className="cursor-pointer hover:text-gray-500 transition-colors"
+                        >
+                          Seller Dashboard
+                        </p>
+                      )}
                       <p
                         onClick={logout}
                         className="cursor-pointer hover:text-gray-500 transition-colors"
@@ -304,6 +332,17 @@ const Navbar = () => {
               >
                 CONTACT
               </NavLink>
+              {token && sellerProfile?.status === "approved" && (
+                <NavLink
+                  onClick={() => setVisible(false)}
+                  className={({ isActive }) =>
+                    `py-2 pl-6 border ${isActive ? "bg-gray-100 text-black" : ""}`
+                  }
+                  to="/seller"
+                >
+                  SELLER DASHBOARD
+                </NavLink>
+              )}
             </div>
           </div>
           {visible && (

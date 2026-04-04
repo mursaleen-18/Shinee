@@ -4,12 +4,22 @@ import axios from 'axios'
 import { toast } from 'react-toastify'
 
 const Profile = () => {
-  const { backendUrl, token, profile, setProfile } = useContext(ShopContext)
+  const { backendUrl, token, profile, setProfile, sellerProfile, fetchSellerStatus, navigate } = useContext(ShopContext)
   const [loading, setLoading] = useState(!profile)
   const [saving, setSaving] = useState(false)
   const [user, setUser] = useState(profile)
   const [isEditing, setIsEditing] = useState(false)
   const [showChangePassword, setShowChangePassword] = useState(false)
+  const [submittingSeller, setSubmittingSeller] = useState(false)
+  const [sellerForm, setSellerForm] = useState({
+    storeName: '',
+    businessType: '',
+    gstNumber: '',
+    idDocumentType: 'Aadhar',
+    idDocumentNumber: '',
+    idDocument: null,
+    addressProof: null
+  })
 
   const [form, setForm] = useState({
     name: '',
@@ -124,7 +134,39 @@ const Profile = () => {
     }
   }
 
+  const submitSellerApplication = async (e) => {
+    e.preventDefault()
+    try {
+      setSubmittingSeller(true)
+      const formData = new FormData()
+      formData.append('storeName', sellerForm.storeName)
+      formData.append('businessType', sellerForm.businessType || '')
+      formData.append('gstNumber', sellerForm.gstNumber || '')
+      formData.append('idDocumentType', sellerForm.idDocumentType)
+      formData.append('idDocumentNumber', sellerForm.idDocumentNumber)
+      if (sellerForm.idDocument) formData.append('idDocument', sellerForm.idDocument)
+      if (sellerForm.addressProof) formData.append('addressProof', sellerForm.addressProof)
+
+      const res = await axios.post(
+        backendUrl + '/api/user/seller/apply',
+        formData,
+        { headers: { token } }
+      )
+      if (res.data.success) {
+        toast.success(res.data.message || 'Seller onboarding submitted')
+        fetchSellerStatus(token)
+      } else {
+        toast.error(res.data.message || 'Failed to submit seller onboarding')
+      }
+    } catch (error) {
+      toast.error(error.message)
+    } finally {
+      setSubmittingSeller(false)
+    }
+  }
+
   useEffect(() => {
+    if (token) fetchSellerStatus(token)
     if (!profile) fetchProfileLocal();
     else {
       setUser(profile);
@@ -142,7 +184,7 @@ const Profile = () => {
         preferences: u.preferences || {}
       })
     }
-  }, [profile, fetchProfileLocal])
+  }, [profile, fetchProfileLocal, token])
 
   if (!token || !user) {
     return <div className='py-10'>Please login to view your profile.</div>;
@@ -181,7 +223,7 @@ const Profile = () => {
           <label className='text-sm text-gray-600'>Email <span className='text-xs text-gray-500'>(verification)</span></label>
           <div className='flex gap-3 items-center'>
             <input value={form.email} disabled className='border rounded px-3 py-2 bg-gray-50 text-gray-500' />
-            {user?.isVerified ? <span className='text-green-600'>Verified</span> : <button type='button' onClick={async () => { try { const r = await axios.post(backendUrl + '/api/user/me/resend-verification', {}, { headers: { token } }); if (r.data.success) { toast.success('Verification token generated (check logs)'); console.log('verification token', r.data.token) } else toast.error(r.data.message) } catch (e) { toast.error(e.message) } }} className='text-sm text-blue-600'>Resend</button>}
+            {user?.isVerified ? <span className='text-green-600'>Verified</span> : <button type='button' onClick={async () => { try { const r = await axios.post(backendUrl + '/api/user/me/resend-verification', {}, { headers: { token } }); if (r.data.success) { toast.success(r.data.message || 'Verification request sent') } else toast.error(r.data.message) } catch (e) { toast.error(e.message) } }} className='text-sm text-blue-600'>Resend</button>}
           </div>
         </div>
         <div className='grid gap-2'>
@@ -247,6 +289,60 @@ const Profile = () => {
         <AddAddress onAdd={(a) => { setForm({ ...form, addresses: [...(form.addresses||[]), a] }) }} disabled={!isEditing} />
       </div>
 
+      {/* Seller onboarding */}
+      <div className='mt-8 max-w-2xl border rounded p-4'>
+        <h4 className='font-medium mb-2'>Become a Seller</h4>
+        <p className='text-sm text-gray-600 mb-3'>
+          Seller status: <span className='font-medium capitalize'>{sellerProfile?.status || 'none'}</span>
+        </p>
+        {sellerProfile?.status === 'approved' && (
+          <button
+            type='button'
+            onClick={() => navigate('/seller')}
+            className='bg-black text-white px-4 py-2 rounded'
+          >
+            Open Seller Dashboard
+          </button>
+        )}
+        {sellerProfile?.status === 'pending' && (
+          <p className='text-sm text-blue-600'>Your onboarding is under admin review.</p>
+        )}
+        {sellerProfile?.status === 'rejected' && (
+          <p className='text-sm text-red-600 mb-3'>
+            Rejected: {sellerProfile?.rejectionReason || 'Please update documents and re-apply.'}
+          </p>
+        )}
+        {(sellerProfile?.status === 'none' || sellerProfile?.status === 'rejected') && (
+          <form onSubmit={submitSellerApplication} className='grid gap-2 mt-2'>
+            <input required placeholder='Store name' value={sellerForm.storeName} onChange={e => setSellerForm({ ...sellerForm, storeName: e.target.value })} className='border rounded px-3 py-2' />
+            <div className='grid grid-cols-2 gap-2'>
+              <input placeholder='Business type' value={sellerForm.businessType} onChange={e => setSellerForm({ ...sellerForm, businessType: e.target.value })} className='border rounded px-3 py-2' />
+              <input placeholder='GST number (optional)' value={sellerForm.gstNumber} onChange={e => setSellerForm({ ...sellerForm, gstNumber: e.target.value })} className='border rounded px-3 py-2' />
+            </div>
+            <div className='grid grid-cols-2 gap-2'>
+              <select value={sellerForm.idDocumentType} onChange={e => setSellerForm({ ...sellerForm, idDocumentType: e.target.value })} className='border rounded px-3 py-2'>
+                <option value='Aadhar'>Aadhar</option>
+                <option value='PAN'>PAN</option>
+                <option value='Passport'>Passport</option>
+                <option value='DrivingLicense'>Driving License</option>
+              </select>
+              <input required placeholder='ID document number' value={sellerForm.idDocumentNumber} onChange={e => setSellerForm({ ...sellerForm, idDocumentNumber: e.target.value })} className='border rounded px-3 py-2' />
+            </div>
+            <div className='grid gap-1'>
+              <label className='text-sm text-gray-600'>ID document image</label>
+              <input required type='file' accept='image/*,application/pdf' onChange={e => setSellerForm({ ...sellerForm, idDocument: e.target.files?.[0] || null })} className='border rounded px-3 py-2' />
+            </div>
+            <div className='grid gap-1'>
+              <label className='text-sm text-gray-600'>Address proof image (optional)</label>
+              <input type='file' accept='image/*,application/pdf' onChange={e => setSellerForm({ ...sellerForm, addressProof: e.target.files?.[0] || null })} className='border rounded px-3 py-2' />
+            </div>
+            <button disabled={submittingSeller} className='bg-black text-white px-4 py-2 rounded w-fit'>
+              {submittingSeller ? 'Submitting...' : 'Submit Seller Onboarding'}
+            </button>
+          </form>
+        )}
+      </div>
+
       {/* Change password modal */}
       {showChangePassword && <ChangePasswordModal onClose={() => setShowChangePassword(false)} backendUrl={backendUrl} token={token} />}
 
@@ -266,7 +362,7 @@ const OrdersList = () => {
   const fetchOrders = useCallback(async () => {
     try {
       setLoading(true)
-      const res = await axios.post(backendUrl + '/api/order/userorders', {}, { headers: { token } })
+      const res = await axios.post(backendUrl + '/api/orders/userorders', {}, { headers: { token } })
       if (res.data.success) setOrders(res.data.orders)
     } catch (err) {
       console.log('Failed to fetch orders', err)

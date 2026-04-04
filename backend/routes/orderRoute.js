@@ -5,10 +5,13 @@ import {
   allOrder,
   userOrders,
   updateStatus,
+  sellerOrders,
+  sellerAnalytics,
 //   verifyStripe,
 } from "../controllers/orderController.js";
 import adminAuth from "../middleware/adminAuth.js";
 import authUser from "../middleware/auth.js";
+import sellerAuth from "../middleware/sellerAuth.js";
 
 const orderRouter = express.Router();
 
@@ -26,6 +29,8 @@ orderRouter.post("/place", authUser, placeOrder);
 //User Features
 
 orderRouter.post("/userorders", authUser, userOrders);
+orderRouter.post("/seller/orders", authUser, sellerAuth, sellerOrders);
+orderRouter.post("/seller/analytics", authUser, sellerAuth, sellerAnalytics);
 
 // Verify Payment
 // orderRouter.post("/verifyStripe", authUser, verifyStripe);
