@@ -31,6 +31,8 @@ const BestSeller = () => {
                             image={item.image}
                             name={item.name}
                             price={item.price}
+                            sellerStoreName={item.sellerStoreName}
+                            sellerName={item.sellerName}
                         />
                     ))
                 }

@@ -19,7 +19,21 @@ A full-stack e-commerce web application with user authentication, profile manage
 
 ### Admin
 - Admin login
-- Manage products, orders, and users (extendable)
+- Manage products, orders, users, and seller onboarding approvals
+
+### Multi-vendor
+- All users sign in as buyers first
+- Buyers can apply for seller onboarding from Profile (basic KYC fields)
+- Admin reviews seller onboarding applications and approves/rejects
+- Approved sellers get seller dashboard access to:
+  - Add/remove/list their own products
+  - View seller-specific orders
+  - View basic analytics (revenue, units sold, product/order counts)
+- Seller products go through admin moderation (approve/reject) before appearing in buyer catalog
+- Buyers can see seller/store name on product cards and product details
+- Buyers can rate/review products and visit seller store profile pages
+- Seller KYC documents are uploaded via backend and stored on Cloudinary
+- Email notifications are triggered for seller approval/rejection and order events
 
 ### Security & UX
 - JWT tokens include server instance ID and token version for secure logout and forced re-login on server restart
@@ -74,12 +88,18 @@ npm run dev
 
 ## Environment Variables
 - `backend/.env`:
-  - `MONGODB_URL` - MongoDB connection string
+  - `MONGODB_URI` - MongoDB connection string
   - `JWT_SECRET` - JWT signing key
+  - `CLERK_SECRET_KEY` - Clerk backend secret key (used for Clerk token verification)
   - `CLOUDINARY_*` - Cloudinary API keys for image upload
   - `ADMIN_EMAIL`, `ADMIN_PASSWORD` - Admin login
+  - `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` - optional SMTP config for emails
+  - `SMTP_SECURE` - optional (`true`/`false`)
+  - `SHINE_LOGO_URL` - optional public logo URL for branded emails
+  - `FRONTEND_URL` / `SELLER_DASHBOARD_URL` - optional links used in email CTAs
 - `frontend/.env`:
   - `VITE_BACKEND_URL` - Backend API base URL
+  - `VITE_CLERK_PUBLISHABLE_KEY` - Clerk frontend publishable key
 
 ## Extending & Contributing
 - Add more product/order/admin features as needed

@@ -5,6 +5,8 @@ import { Routes, Route, useLocation } from "react-router-dom";
 import Add from "./pages/Add";
 import List from "./pages/List";
 import Order from "./pages/Order";
+import Sellers from "./pages/Sellers";
+import Moderation from "./pages/Moderation";
 import Login from "./components/Login";
 import { ToastContainer } from "react-toastify";
 import { AnimatePresence, motion } from "framer-motion";
@@ -74,6 +76,8 @@ const App = () => {
                     <Route path="/add" element={<Add token={token} />} />
                     <Route path="/list" element={<List token={token} />} />
                     <Route path="/orders" element={<Order token={token} />} />
+                    <Route path="/sellers" element={<Sellers token={token} />} />
+                    <Route path="/moderation" element={<Moderation token={token} />} />
                   </Routes>
                 </motion.div>
               </AnimatePresence>
