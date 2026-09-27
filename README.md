@@ -1,6 +1,7 @@
 # Shine
 
 A full-stack e-commerce web application with user authentication, profile management, order tracking, and admin features. Built with React (Vite), Node.js (Express), and MongoDB.
+making some changes to improve this project
 
 ## Features
 
